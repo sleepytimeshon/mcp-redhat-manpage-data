@@ -48,11 +48,12 @@ jobs:
             git diff --cached --stat
           fi
 
-      - name: Bump version and publish
+      - name: Commit, bump version, and publish
         if: steps.changes.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          npm version patch -m "Update man pages from latest UBI images"
+          git commit -m "Update man pages from latest UBI images"
+          npm version patch -m "v%s"
           npm publish --provenance --access public
           git push --follow-tags
