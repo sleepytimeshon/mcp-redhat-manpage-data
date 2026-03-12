@@ -34,11 +34,11 @@ Source images:
 
 ## Related MCP Servers
 
-- [mcp-redhat-manpage](https://github.com/shonstephens/mcp-redhat-manpage) - MCP server that serves this data
-- [mcp-redhat-knowledge](https://github.com/shonstephens/mcp-redhat-knowledge) - Knowledge Base search
-- [mcp-redhat-support](https://github.com/shonstephens/mcp-redhat-support) - Support case management
 - [mcp-redhat-account](https://github.com/shonstephens/mcp-redhat-account) - Account management
+- [mcp-redhat-knowledge](https://github.com/shonstephens/mcp-redhat-knowledge) - Knowledge Base search
+- [mcp-redhat-manpage](https://github.com/shonstephens/mcp-redhat-manpage) - MCP server that serves this data
 - [mcp-redhat-subscription](https://github.com/shonstephens/mcp-redhat-subscription) - Subscription management
+- [mcp-redhat-support](https://github.com/shonstephens/mcp-redhat-support) - Support case management
 
 ## License
 
