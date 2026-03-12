@@ -3,8 +3,8 @@ name: Extract and Publish Man Pages
 on:
   workflow_dispatch:
   schedule:
-    # First Monday of each month at 06:00 UTC
-    - cron: '0 6 1-7 * 1'
+    # Quarterly — Jan 1, Apr 1, Jul 1, Oct 1 at 06:00 UTC
+    - cron: '0 6 1 1,4,7,10 *'
 
 jobs:
   extract:

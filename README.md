@@ -22,7 +22,7 @@ Man pages are extracted from the following packages and stored as plain text:
 
 ## How it's built
 
-A [GitHub Actions workflow](.github/workflows/extract.yml) pulls UBI container images, installs the target packages, renders all man pages to plain text, and publishes updated content to npm. The workflow runs monthly or on manual trigger.
+A [GitHub Actions workflow](.github/workflows/extract.yml) pulls UBI container images, installs the target packages, renders all man pages to plain text, and publishes updated content to npm. The workflow runs quarterly or on manual trigger.
 
 Source images:
 
