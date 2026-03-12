@@ -21,5 +21,9 @@
   "homepage": "https://github.com/shonstephens/mcp-redhat-manpage-data#readme",
   "bugs": {
     "url": "https://github.com/shonstephens/mcp-redhat-manpage-data/issues"
+  },
+  "publishConfig": {
+    "provenance": true,
+    "access": "public"
   }
 }

@@ -9,14 +9,20 @@ on:
 jobs:
   extract:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Upgrade npm
+        run: npm install -g npm@latest
 
       - name: Extract man pages
         run: bash scripts/extract.sh
@@ -44,11 +50,9 @@ jobs:
 
       - name: Bump version and publish
         if: steps.changes.outputs.changed == 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           npm version patch -m "Update man pages from latest UBI images"
-          npm publish
+          npm publish --provenance --access public
           git push --follow-tags
