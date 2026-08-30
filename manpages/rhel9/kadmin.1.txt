@@ -739,6 +739,6 @@ AUTHOR
        MIT
 
 COPYRIGHT
-       1985-2025, MIT
+       1985-2026, MIT
 
 1.21.1                                                                                                      KADMIN(1)

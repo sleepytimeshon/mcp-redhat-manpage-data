@@ -55,6 +55,6 @@ AUTHOR
        Internet Systems Consortium
 
 COPYRIGHT
-       2025, Internet Systems Consortium
+       2026, Internet Systems Consortium
 
 9.18.33                                                                                               DDNS-CONFGEN(8)

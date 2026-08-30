@@ -61,42 +61,61 @@ DOCUMENTATION
        requests are used to write data on a handle; or standalone: getaddrinfo requests don't need a handle they  run
        directly on the loop.
 
+       Guidelines for dealing with handles and requests:
+
+       1. If  uv_foo_init() succeeds in initializing the handle, you must call uv_close(). If the handle's init func‐
+          tion errors, you don't need to do anything.
+
+       2. Only handles are closed, not requests. For example, uv_tcp_t is a handle, uv_write_t is a request.
+
+       3. The handle's memory can only be reclaimed or reused from inside the uv_close_cb or afterwards, not before.
+
+       4. Most handles have init + start/stop functions; some handles don't.   Example:  uv_tcp_t  vs.  uv_process_t;
+          uv_spawn() combines handle initialization and process start into one.
+
+       5. Requests are closed automatically when they complete, or when they are cancelled with uv_cancel().
+
+       6. No  additional  cleanup  is  needed  except  for  uv_fs_t  and uv_getaddrinfo_t requests. For uv_fs_t, call
+          uv_fs_req_cleanup() once you are done with it; for uv_getaddrinfo_t, that's uv_freeaddrinfo().
+
+       7. The request's memory can only be reclaimed or reused from that point onward.
+
    The I/O loop
-       The  I/O  (or event) loop is the central part of libuv. It establishes the content for all I/O operations, and
+       The I/O (or event) loop is the central part of libuv. It establishes the content for all I/O  operations,  and
        it's meant to be tied to a single thread. One can run multiple event loops as long as each runs in a different
-       thread. The libuv event loop (or any other API involving  the  loop  or  handles,  for  that  matter)  is  not
+       thread.  The  libuv  event  loop  (or  any  other  API  involving the loop or handles, for that matter) is not
        thread-safe except where stated otherwise.
 
-       The  event  loop follows the rather usual single threaded asynchronous I/O approach: all (network) I/O is per‐
-       formed on non-blocking sockets which are polled using the best mechanism  available  on  the  given  platform:
-       epoll  on Linux, kqueue on OSX and other BSDs, event ports on SunOS and IOCP on Windows. As part of a loop it‐
-       eration the loop will block waiting for I/O activity on sockets which have been added to the poller and  call‐
-       backs  will  be  fired  indicating socket conditions (readable, writable hangup) so handles can read, write or
+       The event loop follows the rather usual single threaded asynchronous I/O approach: all (network) I/O  is  per‐
+       formed  on  non-blocking  sockets  which  are polled using the best mechanism available on the given platform:
+       epoll on Linux, kqueue on OSX and other BSDs, event ports on SunOS and IOCP on Windows. As part of a loop  it‐
+       eration  the loop will block waiting for I/O activity on sockets which have been added to the poller and call‐
+       backs will be fired indicating socket conditions (readable, writable hangup) so handles  can  read,  write  or
        perform the desired I/O operation.
 
-       In order to better understand how the event loop operates, the following diagram illustrates all stages  of  a
+       In  order  to better understand how the event loop operates, the following diagram illustrates all stages of a
        loop iteration: [image]
 
        1.  The loop concept of 'now' is initially set.
 
-       2.  Due  timers are run if the loop was run with UV_RUN_DEFAULT. All active timers scheduled for a time before
+       2.  Due timers are run if the loop was run with UV_RUN_DEFAULT. All active timers scheduled for a time  before
            the loop's concept of now get their callbacks called.
 
-       3.  If the loop is alive  an iteration is started, otherwise the loop will exit immediately.  So,  when  is  a
-           loop  considered  to  be alive? If a loop has active and ref'd handles, active requests or closing handles
+       3.  If  the  loop  is  alive  an iteration is started, otherwise the loop will exit immediately. So, when is a
+           loop considered to be alive? If a loop has active and ref'd handles, active requests  or  closing  handles
            it's considered to be alive.
 
        4.  Pending callbacks are called. All I/O callbacks are called right after polling for I/O, for the most part.
            There are cases, however, in which calling such a callback is deferred for the next loop iteration. If the
            previous iteration deferred any I/O callback it will be run at this point.
 
-       5.  Idle handle callbacks are called. Despite the unfortunate name, idle handles are run on every loop  itera‐
+       5.  Idle  handle callbacks are called. Despite the unfortunate name, idle handles are run on every loop itera‐
            tion, if they are active.
 
        6.  Prepare handle callbacks are called. Prepare handles get their callbacks called right before the loop will
            block for I/O.
 
-       7.  Poll  timeout  is  calculated.  Before  blocking for I/O the loop calculates for how long it should block.
+       7.  Poll timeout is calculated. Before blocking for I/O the loop calculates for  how  long  it  should  block.
            These are the rules when calculating the timeout:
 
               • If the loop was run with the UV_RUN_NOWAIT flag, the timeout is 0.
@@ -116,28 +135,28 @@ DOCUMENTATION
            vious step. All I/O related handles that were monitoring a given file descriptor for a read or write oper‐
            ation get their callbacks called at this point.
 
-       9.  Check handle callbacks are called. Check handles get their callbacks  called  right  after  the  loop  has
+       9.  Check  handle  callbacks  are  called.  Check  handles get their callbacks called right after the loop has
            blocked for I/O. Check handles are essentially the counterpart of prepare handles.
 
-       10. Close  callbacks  are  called. If a handle was closed by calling uv_close() it will get the close callback
+       10. Close callbacks are called. If a handle was closed by calling uv_close() it will get  the  close  callback
            called.
 
        11. The loop concept of 'now' is updated.
 
        12. Due timers are run. Note that 'now' is not updated again until the next loop iteration.  So if a timer be‐
-           came due while other timers were being processed, it won't be run until the following  event  loop  itera‐
+           came  due  while  other timers were being processed, it won't be run until the following event loop itera‐
            tion.
 
-       13. Iteration  ends.  If  the  loop  was  run  with  UV_RUN_NOWAIT or UV_RUN_ONCE modes the iteration ends and
-           uv_run() will return. If the loop was run with UV_RUN_DEFAULT it will continue  from  the  start  if  it's
+       13. Iteration ends. If the loop was run with  UV_RUN_NOWAIT  or  UV_RUN_ONCE  modes  the  iteration  ends  and
+           uv_run()  will  return.  If  the  loop was run with UV_RUN_DEFAULT it will continue from the start if it's
            still alive, otherwise it will also end.
 
        IMPORTANT:
-          libuv  uses a thread pool to make asynchronous file I/O operations possible, but network I/O is always per‐
+          libuv uses a thread pool to make asynchronous file I/O operations possible, but network I/O is always  per‐
           formed in a single thread, each loop's thread.
 
        NOTE:
-          While the polling mechanism is different, libuv makes the execution model consistent  across  Unix  systems
+          While  the  polling  mechanism is different, libuv makes the execution model consistent across Unix systems
           and Windows.
 
    File I/O
@@ -146,7 +165,7 @@ DOCUMENTATION
 
        For a thorough explanation of the cross-platform file I/O landscape, check out this post.
 
-       libuv  currently  uses  a global thread pool on which all loops can queue work. 3 types of operations are cur‐
+       libuv currently uses a global thread pool on which all loops can queue work. 3 types of  operations  are  cur‐
        rently run on this pool:
 
           • File system operations
@@ -156,12 +175,12 @@ DOCUMENTATION
           • User specified code via uv_queue_work()
 
        WARNING:
-          See the Thread pool work scheduling section for more details, but keep in mind  the  thread  pool  size  is
+          See  the  Thread  pool  work  scheduling section for more details, but keep in mind the thread pool size is
           quite limited.
 
    API documentation
    Error handling
-       In  libuv errors are negative numbered constants. As a rule of thumb, whenever there is a status parameter, or
+       In libuv errors are negative numbered constants. As a rule of thumb, whenever there is a status parameter,  or
        an API functions returns an integer, a negative number will imply an error.
 
        When a function which takes a callback returns an error, the callback will never be called.
@@ -414,33 +433,33 @@ DOCUMENTATION
 
    API
        UV_ERRNO_MAP(iter_macro)
-              Macro that expands to a series of invocations of iter_macro for each  of  the  error  constants  above.
-              iter_macro  is  invoked  with two arguments: the name of the error constant without the UV_ prefix, and
+              Macro  that  expands  to  a  series of invocations of iter_macro for each of the error constants above.
+              iter_macro is invoked with two arguments: the name of the error constant without the  UV_  prefix,  and
               the error message string literal.
 
        const char *uv_strerror(int err)
-              Returns the error message for the given error code.  Leaks a few bytes of memory when you call it  with
+              Returns  the error message for the given error code.  Leaks a few bytes of memory when you call it with
               an unknown error code.
 
        char *uv_strerror_r(int err, char *buf, size_t buflen)
-              Returns  the  error  message  for  the  given  error code. The zero-terminated message is stored in the
+              Returns the error message for the given error code.  The  zero-terminated  message  is  stored  in  the
               user-supplied buffer buf of at most buflen bytes.
 
               New in version 1.22.0.
 
        const char *uv_err_name(int err)
-              Returns the error name for the given error code.  Leaks a few bytes of memory when you call it with  an
+              Returns  the error name for the given error code.  Leaks a few bytes of memory when you call it with an
               unknown error code.
 
        char *uv_err_name_r(int err, char *buf, size_t buflen)
-              Returns  the  error  name for the given error code. The zero-terminated name is stored in the user-sup‐
+              Returns the error name for the given error code. The zero-terminated name is stored  in  the  user-sup‐
               plied buffer buf of at most buflen bytes.
 
               New in version 1.22.0.
 
        int uv_translate_sys_error(int sys_errno)
-              Returns the libuv error code equivalent to the given platform dependent error code: POSIX  error  codes
-              on  Unix (the ones stored in errno), and Win32 error codes on Windows (those returned by GetLastError()
+              Returns  the  libuv error code equivalent to the given platform dependent error code: POSIX error codes
+              on Unix (the ones stored in errno), and Win32 error codes on Windows (those returned by  GetLastError()
               or WSAGetLastError()).
 
               If sys_errno is already a libuv error, it is simply returned.
@@ -448,7 +467,7 @@ DOCUMENTATION
               Changed in version 1.10.0: function declared public.
 
    Version-checking macros and functions
-       Starting with version 1.0.0 libuv follows the semantic versioning scheme. This means that new APIs can be  in‐
+       Starting  with version 1.0.0 libuv follows the semantic versioning scheme. This means that new APIs can be in‐
        troduced throughout the lifetime of a major release. In this section you'll find all macros and functions that
        will allow you to write or compile code conditionally, in order to work with multiple libuv versions.
 
@@ -466,11 +485,11 @@ DOCUMENTATION
               Set to 1 to indicate a release version of libuv, 0 for a development snapshot.
 
        UV_VERSION_SUFFIX
-              libuv  version suffix. Certain development releases such as Release Candidates might have a suffix such
+              libuv version suffix. Certain development releases such as Release Candidates might have a suffix  such
               as "rc".
 
        UV_VERSION_HEX
-              Returns the libuv version packed into a single integer. 8 bits are used for each  component,  with  the
+              Returns  the  libuv  version packed into a single integer. 8 bits are used for each component, with the
               patch number stored in the 8 least significant bits. E.g. for libuv 1.2.3 this would be 0x010203.
 
               New in version 1.7.0.
@@ -483,7 +502,7 @@ DOCUMENTATION
               Returns the libuv version number as a string. For non-release versions the version suffix is included.
 
    uv_loop_t --- Event loop
-       The  event  loop is the central part of libuv's functionality. It takes care of polling for i/o and scheduling
+       The event loop is the central part of libuv's functionality. It takes care of polling for i/o  and  scheduling
        callbacks to be run based on different sources of events.
 
    Data types
@@ -522,10 +541,10 @@ DOCUMENTATION
        int uv_loop_configure(uv_loop_t *loop, uv_loop_option option, ...)
               New in version 1.0.2.
 
-              Set additional loop options.  You should normally call this before the first call  to  uv_run()  unless
+              Set  additional  loop  options.  You should normally call this before the first call to uv_run() unless
               mentioned otherwise.
 
-              Returns  0  on success or a UV_E* error code on failure.  Be prepared to handle UV_ENOSYS; it means the
+              Returns 0 on success or a UV_E* error code on failure.  Be prepared to handle UV_ENOSYS; it  means  the
               loop option is not supported by the platform.
 
               Supported options:
@@ -533,19 +552,19 @@ DOCUMENTATION
               • UV_LOOP_BLOCK_SIGNAL:  Block  a  signal  when  polling  for  new  events.   The  second  argument  to
                 uv_loop_configure() is the signal number.
 
-                This  operation  is  currently  only implemented for SIGPROF signals, to suppress unnecessary wakeups
+                This operation is currently only implemented for SIGPROF signals,  to  suppress  unnecessary  wakeups
                 when using a sampling profiler.  Requesting other signals will fail with UV_EINVAL.
 
               • UV_METRICS_IDLE_TIME: Accumulate the amount of idle time the event loop spends in the event provider.
 
                 This option is necessary to use uv_metrics_idle_time().
 
-              • UV_LOOP_ENABLE_IO_URING_SQPOLL: Enable SQPOLL io_uring instance to handle  asynchronous  file  system
-                operations.
+              • UV_LOOP_USE_IO_URING_SQPOLL: Enable SQPOLL io_uring instance to handle asynchronous file system oper‐
+                ations.
 
               Changed in version 1.39.0: added the UV_METRICS_IDLE_TIME option.
 
-              Changed in version 1.49.0: added the UV_LOOP_ENABLE_IO_URING_SQPOLL option.
+              Changed in version 1.49.0: added the UV_LOOP_USE_IO_URING_SQPOLL option.
 
        int uv_loop_close(uv_loop_t *loop)
               Releases  all internal loop resources. Call this function only when the loop has finished executing and
@@ -1922,6 +1941,42 @@ DOCUMENTATION
 
               Changed in version 1.49.0: If delay is less than 1 then UV_EINVAL` is returned.
 
+       int uv_tcp_keepalive_ex(uv_tcp_t *handle, int on, unsigned int idle, unsigned int intvl, unsigned int cnt)
+              Enable  /  disable TCP keep-alive with all socket options: TCP_KEEPIDLE, TCP_KEEPINTVL and TCP_KEEPCNT.
+              idle is the value for TCP_KEEPIDLE, intvl is  the  value  for  TCP_KEEPINTVL,  cnt  is  the  value  for
+              TCP_KEEPCNT, ignored when on is zero.
+
+              With  TCP  keep-alive enabled, idle is the time (in seconds) the connection needs to remain idle before
+              TCP starts sending keep-alive probes. intvl is the time  (in  seconds)  between  individual  keep-alive
+              probes.   TCP  will  drop  the connection after sending cnt probes without getting any replies from the
+              peer, then the handle is destroyed with a UV_ETIMEDOUT error passed to the corresponding callback.
+
+              If one of idle, intvl, or cnt is less than 1, UV_EINVAL is returned.
+
+              Changed in version 1.52.0: added support of setting TCP_KEEPINTVL and TCP_KEEPCNT socket options.
+
+              NOTE:
+                 Ensure that the socket options are supported by the underlying  operating  system.   Currently  sup‐
+                 ported platforms:
+
+                     • AIX
+
+                     • DragonFlyBSD
+
+                     • FreeBSD
+
+                     • illumos
+
+                     • Linux
+
+                     • macOS
+
+                     • NetBSD
+
+                     • Solaris
+
+                     • Windows
+
        int uv_tcp_simultaneous_accepts(uv_tcp_t *handle, int enable)
               Enable / disable simultaneous asynchronous accept requests that are queued by the operating system when
               listening for new TCP connections.
@@ -2075,7 +2130,7 @@ DOCUMENTATION
                  Paths  on  Unix  get  truncated  to sizeof(sockaddr_un.sun_path) bytes, typically between 92 and 108
                  bytes.
 
-       void uv_pipe_connect2(uv_connect_t *req, uv_pipe_t *handle, const char *name, size_t namelen, unsigned int
+       int uv_pipe_connect2(uv_connect_t *req, uv_pipe_t *handle, const char *name, size_t namelen, unsigned int
        flags, uv_connect_cb cb)
               Connect to the Unix domain socket or the Windows named pipe.
 
@@ -2407,6 +2462,23 @@ DOCUMENTATION
 
               Changed in version 1.37.0: added the UV_UDP_RECVMMSG flag.
 
+       int uv_udp_open_ex(uv_udp_t *handle, uv_os_sock_t sock, unsigned int flags)
+              Opens an existing file descriptor or Windows SOCKET as a UDP handle.
+
+              Parameters
+
+                     • handle -- UDP handle. Should have been initialized with uv_udp_init().
+
+                     • sock -- An existing socket to associate with the handle.
+
+                     • flags -- Flags that control socket behavior, UV_UDP_REUSEADDR, and UV_UDP_REUSEPORT  are  sup‐
+                       ported.
+
+              Returns
+                     0 on success, or an error code < 0 on failure.
+
+              New in version 1.52.0.
+
        int uv_udp_open(uv_udp_t *handle, uv_os_sock_t sock)
               Opens an existing file descriptor or Windows SOCKET as a UDP handle.
 
@@ -2417,8 +2489,11 @@ DOCUMENTATION
               Changed in version 1.2.1: the file descriptor is set to non-blocking mode.
 
               NOTE:
-                 The passed file descriptor or SOCKET is not checked for its type, but it's required that  it  repre‐
+                 The  passed  file descriptor or SOCKET is not checked for its type, but it's required that it repre‐
                  sents a valid datagram socket.
+
+                 Internally sets the SO_REUSEADDR socket option unconditionally. This means the reuse flag is  always
+                 enabled, regardless of user intent. For more control use uv_udp_open_ex().
 
        int uv_udp_bind(uv_udp_t *handle, const struct sockaddr *addr, unsigned int flags)
               Bind the UDP handle to an IP address and port.
@@ -2900,7 +2975,7 @@ DOCUMENTATION
        throughput there should be no change in observable behavior. Libuv reverts to using its  threadpool  when  the
        necessary  kernel  features  are  unavailable or unsuitable. Starting with libuv v1.49.0 this behavior was re‐
        verted and Libuv on Linux by default will be using the threadpool again.  In  order  to  enable  io_uring  the
-       uv_loop_t instance must be configured with the UV_LOOP_ENABLE_IO_URING_SQPOLL option.
+       uv_loop_t instance must be configured with the UV_LOOP_USE_IO_URING_SQPOLL option.
 
        NOTE:
           On Windows uv_fs_* functions use utf-8 encoding.
@@ -2994,7 +3069,8 @@ DOCUMENTATION
                      uint64_t f_bavail;
                      uint64_t f_files;
                      uint64_t f_ffree;
-                     uint64_t f_spare[4];
+                     uint64_t f_frsize;
+                     uint64_t f_spare[3];
                  } uv_statfs_t;
 
        enum uv_dirent_type_t
@@ -4289,6 +4365,10 @@ DOCUMENTATION
        int uv_exepath(char *buffer, size_t *size)
               Gets the executable path. You must call uv_setup_args before calling this function.
 
+              Be  careful in setuid executables. On some platforms the executable path is an arbitrary string that is
+              controlled by the user. On other platforms environment variables are consulted that may be  under  con‐
+              trol of the user.
+
        int uv_cwd(char *buffer, size_t *size)
               Gets  the  current  working directory, and stores it in buffer. If the current working directory is too
               large to fit in buffer, this function returns UV_ENOBUFS, and sets size to the required length, includ‐
@@ -4611,11 +4691,11 @@ DOCUMENTATION
               Convert UTF-16 (or UCS-2) data in utf16 to WTF-8 data in *wtf8_ptr. The utf16_len count (in characters)
               gives the length of utf16. If utf16 is NUL terminated, utf16_len can be set to -1, otherwise it must be
               specified.   If   wtf8_ptr   is   NULL,   no  result  will  be  computed,  but  the  length  (equal  to
-              uv_utf16_length_as_wtf8) will be stored in wtf8_ptr.  If *wtf8_ptr is NULL, space  for  the  conversion
-              will be allocated and returned in wtf8_ptr and the length will be returned in wtf8_len_ptr.  Otherwise,
-              the length of *wtf8_ptr must be passed in wtf8_len_ptr. The wtf8_ptr must contain an extra space for an
-              extra  NUL  after the result.  If the result is truncated, UV_ENOBUFS will be returned and wtf8_len_ptr
-              will be the length of the required wtf8_ptr to contain the whole result.
+              uv_utf16_length_as_wtf8) will be stored in wtf8_len_ptr.  If *wtf8_ptr is NULL, space for  the  conver‐
+              sion  will be allocated and returned in wtf8_ptr and the length will be returned in wtf8_len_ptr.  Oth‐
+              erwise, the length of *wtf8_ptr must be passed in wtf8_len_ptr. The  wtf8_ptr  must  contain  an  extra
+              space  for  an extra NUL after the result.  If the result is truncated, UV_ENOBUFS will be returned and
+              wtf8_len_ptr will be the length of the required wtf8_ptr to contain the whole result.
 
               New in version 1.47.0.
 
@@ -5975,7 +6055,7 @@ DOCUMENTATION
           }
 
        When the user triggers the signal by pressing Ctrl+C we send uv_cancel() to all the workers. uv_cancel()  will
-       return 0 for those that are already executing or finished.
+       return 0 for those tasks that are pending execution and could be cancelled.
 
        queue-cancel/main.c
 
@@ -7607,4 +7687,4 @@ AUTHOR
 COPYRIGHT
        2014-present, libuv contributors
 
-1.51.0                                               Sep 01, 2025                                            LIBUV(1)
+1.52.1                                               May 21, 2026                                            LIBUV(1)
