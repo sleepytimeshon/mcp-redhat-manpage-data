@@ -42,4 +42,4 @@ Source images:
 
 ## License
 
-MIT
+The package code (`index.js` and `scripts/`) is licensed under the MIT License; see [LICENSE](LICENSE). The man pages under `manpages/` keep the licenses of their source RPM packages; see [NOTICES](NOTICES).
