@@ -34,14 +34,14 @@ jobs:
 
       - name: Check script syntax
         run: |
-          bash -n scripts/extract.sh
-          shellcheck scripts/extract.sh
+          bash -n scripts/extract.sh scripts/pack.sh
+          shellcheck scripts/extract.sh scripts/pack.sh
 
       - name: Validate man pages
         run: npm test
 
       - name: Check package contents
-        run: npm pack --dry-run 2>&1 | grep -vE 'npm notice [0-9.]+[kMB]* +manpages/'
+        run: npm pack --dry-run
 
       # npm publish rewrites or drops package.json fields it considers invalid, so fail
       # here instead of shipping a broken package

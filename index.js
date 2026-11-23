@@ -1,12 +1,14 @@
 // Read the RHEL man pages in this package, or in another directory with the same layout.
 //
-// Layout: <dir>/rhel<N>/<page>.<section>.txt.gz (or plain .txt), an optional aliases.tsv
-// mapping pages with identical content to one stored page, and sources.tsv. Callers use
-// the reader functions below rather than the files, so the layout can change without
-// changing them.
+// Layout: <dir>/rhel<N>/pages.gz holds every stored page as its own gzip member, and
+// index.tsv gives each page's byte offset and length in it. A directory of loose
+// <page>.<section>.txt or .txt.gz files works too. An optional aliases.tsv maps pages with
+// identical content to one stored page, and sources.tsv records where each page came from.
+// Callers use the reader functions below rather than the files, so the layout can change
+// without changing them.
 
 const { existsSync } = require("node:fs");
-const { readdir, readFile } = require("node:fs/promises");
+const { open, readdir, readFile } = require("node:fs/promises");
 const { join } = require("node:path");
 const { gunzipSync } = require("node:zlib");
 
@@ -29,23 +31,33 @@ function createReader(dir = manpagesDir) {
     return path;
   }
 
-  // Index a version once: stored page -> file name, alias -> stored page
+  // Read the rows of a TSV file after its header
+  async function readRows(file) {
+    return (await readFile(file, "utf8")).trimEnd().split("\n").slice(1).map((row) => row.split("\t"));
+  }
+
+  // Index a version once: stored page -> where its text is, alias -> stored page
   async function loadIndex(version) {
     if (indexes.has(version)) return indexes.get(version);
 
     const path = versionDir(version);
     const files = new Map();
-    for (const f of await readdir(path)) {
-      if (f.endsWith(".txt.gz")) files.set(f.slice(0, -7), f);
-      else if (f.endsWith(".txt")) files.set(f.slice(0, -4), f);
+    const indexFile = join(path, "index.tsv");
+    if (existsSync(indexFile)) {
+      for (const [page, offset, length] of await readRows(indexFile)) {
+        if (page) files.set(page, { offset: Number(offset), length: Number(length) });
+      }
+    } else {
+      for (const f of await readdir(path)) {
+        if (f.endsWith(".txt.gz")) files.set(f.slice(0, -7), { file: f });
+        else if (f.endsWith(".txt")) files.set(f.slice(0, -4), { file: f });
+      }
     }
 
     const aliases = new Map();
     const aliasFile = join(path, "aliases.tsv");
     if (existsSync(aliasFile)) {
-      const rows = (await readFile(aliasFile, "utf8")).trimEnd().split("\n").slice(1);
-      for (const row of rows) {
-        const [page, target] = row.split("\t");
+      for (const [page, target] of await readRows(aliasFile)) {
         if (page && files.has(target)) aliases.set(page, target);
       }
     }
@@ -56,9 +68,20 @@ function createReader(dir = manpagesDir) {
   }
 
   async function readStored(index, base) {
-    const file = index.files.get(base);
-    const data = await readFile(join(index.path, file));
-    return (file.endsWith(".gz") ? gunzipSync(data) : data).toString("utf8");
+    const entry = index.files.get(base);
+    if (entry.file) {
+      const data = await readFile(join(index.path, entry.file));
+      return (entry.file.endsWith(".gz") ? gunzipSync(data) : data).toString("utf8");
+    }
+    const handle = await open(join(index.path, "pages.gz"), "r");
+    try {
+      const data = Buffer.alloc(entry.length);
+      const { bytesRead } = await handle.read(data, 0, entry.length, entry.offset);
+      if (bytesRead !== entry.length) throw new Error(`pages.gz is truncated at ${base}`);
+      return gunzipSync(data).toString("utf8");
+    } finally {
+      await handle.close();
+    }
   }
 
   return {

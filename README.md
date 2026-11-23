@@ -21,7 +21,8 @@ Each `manpages/rhel<N>/` directory contains:
 
 | File | Contents |
 |------|----------|
-| `<page>.<section>.txt.gz` | A page rendered to ASCII text at 120 columns, without hyphenation, gzip-compressed |
+| `pages.gz` | Every stored page rendered to ASCII text at 120 columns, without hyphenation, each compressed as its own gzip member and concatenated in page-name order (`zcat pages.gz` prints them all) |
+| `index.tsv` | The byte offset and length of each stored page in `pages.gz` (`page`, `offset`, `length`) |
 | `aliases.tsv` | Pages whose content is identical to a stored page (`page`, `target`); each is stored once |
 | `sources.tsv` | The package and license of every page, stored or aliased (`page`, `package`, `license`) |
 
@@ -41,7 +42,7 @@ for await (const page of storedPages("9")) // each distinct page once, for full-
 const custom = createReader("/path/to/manpages"); // same functions for another directory
 ```
 
-`createReader` accepts a directory with the same layout, with pages either gzipped (`.txt.gz`) or plain (`.txt`). `manpagesDir` is the path of the bundled `manpages` directory. TypeScript declarations are in `index.d.ts`.
+`createReader` accepts a directory with the same layout, or one with a `<page>.<section>.txt` or `<page>.<section>.txt.gz` file per page in place of `pages.gz` and `index.tsv`. `manpagesDir` is the path of the bundled `manpages` directory. TypeScript declarations are in `index.d.ts`.
 
 ## How it's built
 
@@ -51,7 +52,7 @@ const custom = createReader("/path/to/manpages"); // same functions for another 
 2. Finds every package that ships man pages in sections 1, 5, 7, or 8.
 3. Downloads each package without installing it and unpacks only its man pages.
 4. Renders every page with the `man` of the same RHEL release, including symlinked and `.so` alias pages.
-5. Stores pages with identical content once, listing the others in `aliases.tsv`, and compresses each stored page.
+5. Stores pages with identical content once, listing the others in `aliases.tsv`, compresses each stored page, and packs them into `pages.gz` with [`scripts/pack.sh`](scripts/pack.sh). One archive per version keeps the package to a few files and keeps page names such as `error::dwarf.7stap`, or `HEAD.1` next to `head.1`, off the file system, so it installs on every platform.
 6. Fails without replacing anything if a page in [`scripts/required-pages.txt`](scripts/required-pages.txt) is missing or the page count fell by more than 10%.
 
 ```bash
@@ -61,7 +62,7 @@ scripts/extract.sh 9        # one version
 
 ## Releasing
 
-Every push to `main` runs CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): `npm test` validates every page, alias, and source entry, and `shellcheck` checks the extraction script.
+Every push to `main` runs CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): `npm test` validates every page, alias, and source entry, and `shellcheck` checks the extraction scripts.
 
 To release new man pages, run `scripts/extract.sh` on a subscribed RHEL host, review the changes, bump `version` in `package.json`, and push to `main`. When that version is not yet on npm, CI publishes it with provenance through npm trusted publishing and creates a `vX.Y.Z` GitHub release.
 

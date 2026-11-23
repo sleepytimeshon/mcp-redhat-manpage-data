@@ -5,8 +5,9 @@
 # sections 1, 5, 7, or 8 is downloaded (not installed), only its man pages are unpacked,
 # and each page is rendered to ASCII with the man-db of the same RHEL release. Pages with
 # identical content are stored once and listed in aliases.tsv, and every stored page is
-# gzip-compressed (<page>.<section>.txt.gz). Each version is built in a staging
-# directory, validated, and only then replaces manpages/rhel<N>/.
+# gzip-compressed and packed into one pages.gz with an index.tsv (scripts/pack.sh). Each
+# version is built in a staging directory, validated, and only then replaces
+# manpages/rhel<N>/.
 #
 # Usage: scripts/extract.sh [8|9|10 ...]   (no argument extracts all versions)
 #
@@ -42,16 +43,18 @@ die() {
   exit 1
 }
 
-# Count the pages in sections $SECTIONS in a version directory, stored or aliased
-page_count() {
-  local dir="$1" count=0 s
-  for s in $SECTIONS; do
-    count=$((count + $(find "$dir" -maxdepth 1 \( -name "*.${s}*.txt" -o -name "*.${s}*.txt.gz" \) | wc -l)))
+# List every page name in a packed version directory, stored or aliased
+list_pages() {
+  local dir="$1" f
+  for f in index.tsv aliases.tsv; do
+    [ -f "$dir/$f" ] && tail -n +2 "$dir/$f" | cut -f1
   done
-  if [ -f "$dir/aliases.tsv" ]; then
-    count=$((count + $(wc -l < "$dir/aliases.tsv") - 1))
-  fi
-  echo "$count"
+  return 0
+}
+
+# Count the pages in a packed version directory, stored or aliased
+page_count() {
+  list_pages "$1" | wc -l
 }
 
 # ==============================================================================
@@ -180,17 +183,19 @@ extract_version() {
     rm -f "$staging/${page}.txt"
   done
   find "$staging" -name '*.txt' -print0 | xargs -0 -r -P "$(nproc)" -n 200 gzip -9n
+  "$SCRIPT_DIR/pack.sh" "$staging" >/dev/null
 
   # Validate before replacing anything
   local new_count old_count missing=()
   new_count=$(( $(page_count "$staging") ))
   old_count=0
   [ -d "$target" ] && old_count=$(page_count "$target")
+  local all_pages="$WORK_ROOT/rhel${version}-pages.txt"
+  list_pages "$staging" > "$all_pages"
   for page in "${REQUIRED_PAGES[@]}"; do
-    [ -f "$staging/${page}.txt.gz" ] || cut -f1 "$staging/aliases.tsv" | grep -qxF "$page" \
-      || missing+=("$page")
+    grep -qxF -- "$page" "$all_pages" || missing+=("$page")
   done
-  echo "    Rendered ${rendered} pages: $(find "$staging" -name '*.txt.gz' | wc -l) stored, $(( $(wc -l < "$staging/aliases.tsv") - 1 )) aliases (previously ${old_count} in sections ${SECTIONS})"
+  echo "    Rendered ${rendered} pages: $(( $(wc -l < "$staging/index.tsv") - 1 )) stored, $(( $(wc -l < "$staging/aliases.tsv") - 1 )) aliases (previously ${old_count})"
 
   if [ "${#missing[@]}" -gt 0 ]; then
     die "RHEL ${version}: required pages missing: ${missing[*]}; kept ${target} unchanged, staging left in ${staging}"
