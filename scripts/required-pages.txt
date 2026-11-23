@@ -1,0 +1,14 @@
+# Pages every RHEL version must contain, as <page>.<section>. A missing page means the
+# extraction went wrong. Read by scripts/extract.sh and test/validate.mjs.
+sssd.conf.5
+krb5.conf.5
+chrony.conf.5
+NetworkManager.conf.5
+sshd_config.5
+systemd.unit.5
+sudoers.5
+ls.1
+useradd.8
+dnf.8
+realm.8
+adcli.8

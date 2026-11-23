@@ -6,3 +6,6 @@ node_modules/
 
 # npm debug logs
 npm-debug.log*
+
+# Staging directories scripts/extract.sh leaves behind when validation fails
+/manpages/.rhel*.new/

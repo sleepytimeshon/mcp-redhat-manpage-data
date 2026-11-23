@@ -1,10 +1,21 @@
 {
   "name": "mcp-redhat-manpage-data",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "Pre-extracted RHEL man pages for mcp-redhat-manpage (RHEL 8, 9, 10)",
   "main": "index.js",
+  "types": "index.d.ts",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "manpages/",
+    "NOTICES"
+  ],
   "scripts": {
-    "extract": "bash scripts/extract.sh"
+    "extract": "bash scripts/extract.sh",
+    "test": "node test/validate.mjs && node test/api.mjs"
   },
   "keywords": [
     "mcp",
