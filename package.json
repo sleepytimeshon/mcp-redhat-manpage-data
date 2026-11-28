@@ -1,6 +1,6 @@
 {
   "name": "mcp-redhat-manpage-data",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Pre-extracted RHEL man pages for mcp-redhat-manpage (RHEL 8, 9, 10)",
   "main": "index.js",
   "types": "index.d.ts",

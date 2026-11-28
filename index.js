@@ -7,7 +7,7 @@
 // Callers use the reader functions below rather than the files, so the layout can change
 // without changing them.
 
-const { existsSync } = require("node:fs");
+const { existsSync, readdirSync } = require("node:fs");
 const { open, readdir, readFile } = require("node:fs/promises");
 const { join } = require("node:path");
 const { gunzipSync } = require("node:zlib");
@@ -20,13 +20,26 @@ function splitPage(base) {
   return { name: base.slice(0, dot), section: base.slice(dot + 1) };
 }
 
+// RHEL major versions in a man pages directory, in numeric order
+function listVersions(dir) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((d) => /^rhel\d+$/.test(d))
+    .map((d) => d.slice(4))
+    .sort((a, b) => Number(a) - Number(b));
+}
+
 function createReader(dir = manpagesDir) {
   const indexes = new Map();
+  const sources = new Map();
 
+  // A version is a major version number; anything else never reaches the file system
   function versionDir(version) {
-    const path = join(dir, `rhel${version}`);
-    if (!existsSync(path)) {
-      throw new Error(`No man pages for RHEL ${version} in ${dir}`);
+    const v = String(version);
+    const path = join(dir, `rhel${v}`);
+    if (!/^\d+$/.test(v) || !existsSync(path)) {
+      const available = listVersions(dir);
+      throw new Error(`No man pages for RHEL ${v}. Available versions: ${available.length ? available.join(", ") : "none"}.`);
     }
     return path;
   }
@@ -67,6 +80,26 @@ function createReader(dir = manpagesDir) {
     return index;
   }
 
+  // The package and license of each page, from sources.tsv when the directory has one
+  async function loadSources(version) {
+    if (sources.has(version)) return sources.get(version);
+    const file = join(versionDir(version), "sources.tsv");
+    const map = new Map();
+    if (existsSync(file)) {
+      for (const [page, pkg, license] of await readRows(file)) {
+        if (page) map.set(page, { package: pkg, license });
+      }
+    }
+    sources.set(version, map);
+    return map;
+  }
+
+  // One stored page from a pages.gz already read into memory
+  function unpackMember(pack, entry, base) {
+    if (entry.offset + entry.length > pack.length) throw new Error(`pages.gz is truncated at ${base}`);
+    return gunzipSync(pack.subarray(entry.offset, entry.offset + entry.length)).toString("utf8");
+  }
+
   async function readStored(index, base) {
     const entry = index.files.get(base);
     if (entry.file) {
@@ -89,11 +122,7 @@ function createReader(dir = manpagesDir) {
 
     // RHEL major versions available, in numeric order, e.g. ["8", "9", "10"]
     async versions() {
-      if (!existsSync(dir)) return [];
-      return (await readdir(dir))
-        .filter((d) => /^rhel\d+$/.test(d))
-        .map((d) => d.slice(4))
-        .sort((a, b) => Number(a) - Number(b));
+      return listVersions(dir);
     },
 
     // Every page of a version, stored or aliased, sorted by name then section
@@ -112,11 +141,25 @@ function createReader(dir = manpagesDir) {
       return stored ? readStored(index, stored) : null;
     },
 
-    // Iterate over each distinct page text once (aliases share their stored page's text)
+    // The source package and license of a page (stored or aliased), or null when unknown
+    async pageSource(version, name, section) {
+      const index = await loadIndex(version);
+      const base = `${name}.${section}`;
+      if (!index.files.has(base) && !index.aliases.has(base)) return null;
+      return (await loadSources(version)).get(base) ?? null;
+    },
+
+    // Iterate over each distinct page text once (aliases share their stored page's text).
+    // A packed version is read in one pass instead of one file read per page.
     async *storedPages(version) {
       const index = await loadIndex(version);
-      for (const base of index.files.keys()) {
-        yield { ...splitPage(base), read: () => readStored(index, base) };
+      const packFile = join(index.path, "pages.gz");
+      const pack = existsSync(join(index.path, "index.tsv")) ? await readFile(packFile) : null;
+      for (const [base, entry] of index.files) {
+        const read = pack && !entry.file
+          ? async () => unpackMember(pack, entry, base)
+          : () => readStored(index, base);
+        yield { ...splitPage(base), read };
       }
     },
   };
@@ -130,5 +173,6 @@ module.exports = {
   versions: reader.versions,
   listPages: reader.listPages,
   readPage: reader.readPage,
+  pageSource: reader.pageSource,
   storedPages: reader.storedPages,
 };

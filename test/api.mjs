@@ -40,6 +40,7 @@ try {
     "head.1": "head page\n",
   });
   await writeFile(join(packed, "aliases.tsv"), "page\ttarget\nother.8\tpacked.8\nbroken.1\tmissing.1\n");
+  await writeFile(join(packed, "sources.tsv"), "page\tpackage\tlicense\npacked.8\tpkg-1.0-1.el9.x86_64\tMIT\nother.8\tpkg-1.0-1.el9.x86_64\tMIT\n");
 
   const loose = join(fixture, "rhel10");
   await mkdir(loose);
@@ -75,7 +76,22 @@ try {
   assert.equal(await reader.readPage("10", "zipped", "8"), "gzipped page\n", "loose gzipped page");
   assert.equal(await reader.readPage("10", "other", "8"), "gzipped page\n", "loose alias");
 
-  await assert.rejects(reader.listPages("7"), /No man pages for RHEL 7/);
+  // Each stored page read through storedPages matches readPage
+  for await (const page of reader.storedPages("9")) {
+    assert.equal(await page.read(), await reader.readPage("9", page.name, page.section), `storedPages ${page.name}.${page.section}`);
+  }
+
+  assert.deepEqual(await reader.pageSource("9", "packed", "8"), { package: "pkg-1.0-1.el9.x86_64", license: "MIT" });
+  assert.deepEqual(await reader.pageSource("9", "other", "8"), { package: "pkg-1.0-1.el9.x86_64", license: "MIT" }, "alias source");
+  assert.equal(await reader.pageSource("9", "HEAD", "1"), null, "stored page missing from sources.tsv");
+  assert.equal(await reader.pageSource("9", "absent", "5"), null);
+  assert.equal(await reader.pageSource("10", "zipped", "8"), null, "no sources.tsv");
+
+  await assert.rejects(reader.listPages("7"), /No man pages for RHEL 7\. Available versions: 9, 10\./);
+  await assert.rejects(reader.listPages("7"), (err) => !err.message.includes(fixture), "error omits the directory path");
+  for (const bad of ["9/../..", "../rhel9", "9 ", "", "rhel9"]) {
+    await assert.rejects(reader.readPage(bad, "packed", "8"), /No man pages for RHEL/, `version ${JSON.stringify(bad)} is rejected`);
+  }
   assert.deepEqual(await data.createReader(join(fixture, "nonexistent")).versions(), []);
 } finally {
   await rm(fixture, { recursive: true, force: true });
@@ -92,5 +108,17 @@ for (const version of await data.versions()) {
 assert.match(await data.readPage("9", "podman-run", "1"), /podman-run/i, "RHEL 9: aliased podman-run(1)");
 assert.match(await data.readPage("10", "error::dwarf", "7stap"), /dwarf/i, "RHEL 10: name with colons");
 assert.notEqual(await data.readPage("9", "HEAD", "1"), await data.readPage("9", "head", "1"), "HEAD(1) and head(1) differ");
+for (const version of await data.versions()) {
+  const src = await data.pageSource(version, "sssd.conf", "5");
+  assert.match(src?.package ?? "", new RegExp(`^sssd-.*\\.el${version}`), `RHEL ${version}: sssd.conf(5) source package`);
+  assert.ok(src.license, `RHEL ${version}: sssd.conf(5) license`);
+}
+
+// storedPages reads a packed version in one pass and matches readPage
+let checked = 0;
+for await (const page of data.storedPages("9")) {
+  if (checked++ % 1000) continue;
+  assert.equal(await page.read(), await data.readPage("9", page.name, page.section), `RHEL 9: storedPages ${page.name}.${page.section}`);
+}
 
 console.log("ok: reader API on fixture and bundled pages");

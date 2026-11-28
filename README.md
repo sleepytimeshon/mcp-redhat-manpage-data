@@ -31,16 +31,19 @@ Each `manpages/rhel<N>/` directory contains:
 Read pages through the exported functions rather than the files, so the storage layout can change between releases:
 
 ```js
-const { versions, listPages, readPage, storedPages, createReader } = require("mcp-redhat-manpage-data");
+const { versions, listPages, readPage, pageSource, storedPages, createReader } = require("mcp-redhat-manpage-data");
 
 await versions();                          // ["8", "9", "10"]
 await readPage("9", "sssd.conf", "5");     // page text, or null if absent
+await pageSource("9", "sssd.conf", "5");   // { package: "sssd-common-...el9...", license: "GPL-3.0-or-later" }, or null
 await listPages("9");                      // [{ name, section }, ...] including aliases
 for await (const page of storedPages("9")) // each distinct page once, for full-text search
   if ((await page.read()).includes("ldap_uri")) console.log(page.name, page.section);
 
 const custom = createReader("/path/to/manpages"); // same functions for another directory
 ```
+
+A version is a major version number (`"9"`). Every function that takes one throws for a version the directory does not have, with a message that lists the available versions. `storedPages` reads a packed version's `pages.gz` once, so a full scan of a version takes well under a second.
 
 `createReader` accepts a directory with the same layout, or one with a `<page>.<section>.txt` or `<page>.<section>.txt.gz` file per page in place of `pages.gz` and `index.tsv`. `manpagesDir` is the path of the bundled `manpages` directory. TypeScript declarations are in `index.d.ts`.
 
